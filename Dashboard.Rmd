@@ -1,0 +1,376 @@
+---
+title: "Project 4 Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(DT)
+library(jsonlite)
+library(httr)
+library(tidyverse)
+library(tidycensus)
+library(shiny)
+```
+
+
+# About
+
+## Column {.tabset}
+### Background
+
+While the census is taken every 10 years, the Census Bureau also conducts the [American Community Survey (ACS)](https://www.census.gov/programs-surveys/acs/) every year. Part of the data collected in this survey is about household income and computer ownership. This dashboard uses examines median incomes and computer usage from the ACS through use of the [tidycensus API](https://walker-data.com/tidycensus/). 
+
+
+<center>
+<img src="https://walker-data.com/tidycensus/logo.png" width="20%" height="auto"><img src="https://www.census.gov/etc.clientlibs/census/clientlibs/census-pattern-library/resources/images/USCENSUS_IDENTITY_SOLO_BLACK_1.5in_R_no_padding.svg" width="20%" height="auto">
+</center>
+
+
+### Video walkthrough
+
+**Walkthrough of this dashboard**
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/e5J1W_t5NGs?si=AjBdGkXn5YGzAe6N" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
+
+
+# The Data
+
+```{r load data}
+
+readRenviron("../.Renviron")
+census_key <- Sys.getenv("CENSUS_API_KEY")
+
+v19 <- load_variables(2019, "acs1", cache = TRUE)
+v21 <- load_variables(2021, "acs1", cache = TRUE)
+
+vars = c("B19019_001", "B28008_001", "B28008_002", "B28008_003", "B28008_004", "B28008_005", "B28008_006", "B28008_007", "B28008_008", "B28008_009", "B28008_010")
+
+
+v19 %>%
+  filter(name %in% all_of(vars)) %>%
+  as.tibble() %>%
+  rename("variable" = "name") -> v19
+
+v21 %>%
+  filter(name %in% all_of(vars)) %>%
+  as.tibble() %>%
+  rename("variable" = "name") -> v21
+
+
+if(!dir.exists(here::here("data"))){
+  dir.create(here::here("data"))
+  
+  us19 <- get_acs(
+    geography = "state",
+    variables = c("B19019_001", "B28008_001", "B28008_002", "B28008_003", "B28008_004", "B28008_005", "B28008_006", "B28008_007", "B28008_008", "B28008_009", "B28008_010"),
+    geometry = TRUE,
+    survey = "acs1",
+    year = 2019
+    )
+  
+  us21 <- get_acs(
+    geography = "state",
+    variables = c("B19019_001", "B28008_001", "B28008_002", "B28008_003", "B28008_004", "B28008_005", "B28008_006", "B28008_007", "B28008_008", "B28008_009", "B28008_010"),
+    geometry = TRUE,
+    survey = "acs1",
+    year = 2021
+    )
+
+  
+  md19 <- get_acs(
+    geography = "county",
+    variables = c("B19019_001", "B28008_001", "B28008_002", "B28008_003", "B28008_004", "B28008_005", "B28008_006", "B28008_007", "B28008_008", "B28008_009", "B28008_010"),
+    state = "MD",
+   geometry = TRUE,
+    survey = "acs1",
+    year = 2019
+   )
+  
+  md21 <- get_acs(
+    geography = "county",
+    variables = c("B19019_001", "B28008_001", "B28008_002", "B28008_003", "B28008_004", "B28008_005", "B28008_006", "B28008_007", "B28008_008", "B28008_009", "B28008_010"),
+    state = "MD",
+    geometry = TRUE,
+    survey = "acs1",
+    year = 2021
+    )
+
+  save(us19, file = "data/us2019.rda")
+  save(us21, file = "data/us2021.rda")
+
+  save(md19, file = "data/md2019.rda")
+  save(md21, file = "data/md2021.rda")
+}
+
+load("data/us2019.rda")
+load("data/us2021.rda")
+
+load("data/md2019.rda")
+load("data/md2021.rda")
+
+us19 %>%
+  mutate(YEAR = 2019) %>%
+  left_join(v19, by = "variable") -> us19
+
+us21 %>%
+  mutate(YEAR = 2021) %>%
+  left_join(v21, by = "variable") -> us21
+
+md19 %>%
+  mutate(YEAR = 2019) -> md19
+
+
+md21 %>%
+  mutate(YEAR = 2021) -> md21
+
+us <- bind_rows(us19, us21, .id = "YEAR")
+md <- bind_rows(md19, md21, .id = "YEAR")
+
+us$YEAR <- map(us$YEAR, function(x) ifelse(x == 1, 2019, 2021))
+md$YEAR <- map(md$YEAR, function(x) ifelse(x == 1, 2019, 2021))
+```
+
+## Sidebar {.sidebar}
+
+```{r data-select state}
+selectInput(inputId = "selected_state",
+            label = "Select a state",
+            choices = us %>%
+              pull(NAME) %>%
+              unique() %>%
+              sort(),
+            selected = "Alabama"
+)
+```
+
+```{r data-select variable}
+selectInput(inputId = "variable_selected",
+            label = "Select a variable",
+            choices = us %>%
+              pull(variable) %>%
+              unique() %>%
+              sort(),
+            selected = "B19019_001"
+)
+```
+
+```{r data-slect year}
+radioButtons(inputId = "year_selected",
+             label = "Select a year",
+             choices = c("2019", "2021")
+)
+```
+
+```{r data-filter}
+actionButton(inputId = "selected_filters", 
+             label = "Filter")
+```
+
+```{r data-view all}
+actionButton(inputId = "view_all",
+             label = "View all")
+```
+
+## Data table {.tabset}
+
+### US Data
+```{r US-data view table}
+
+us %>% 
+  as.tibble() %>%
+  left_join(v19, by = "variable") %>%
+  select(!c(GEOID, geometry)) %>%
+DT::datatable()
+```
+
+### Maryland Data
+```{r MD-data view table}
+
+md %>% 
+  as.tibble() %>%
+  left_join(v19, by = "variable") %>%
+  select(!c(GEOID, geometry)) %>%
+DT::datatable()
+```
+
+
+
+# Country Wide Income
+
+
+## Row {.tabset}
+-----------------------------------------------------------------------
+
+### 2019
+
+```{r country-income 2019}
+filter(us, YEAR == 2019) %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(x = NAME, y = estimate)) +
+  geom_col() +
+  labs(
+    title = "2019 Median Income by State",
+    x = "State",
+    y = "Median Income",
+    caption = "US 2019 median income"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+```
+
+
+### 2021
+```{r country-income 2021}
+filter(us, YEAR == 2021) %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(x = NAME, y = estimate)) +
+  geom_col() +
+  labs(
+    title = "2021 Median Income by State",
+    x = "State",
+    y = "Median Income",
+    caption = "US 2021 median income"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+
+```
+
+
+# Computer Usage in the Country
+```{r}
+```
+
+
+
+
+
+# Maryland Income
+
+
+## Column
+-----------------------------------------------------------------------
+
+### Median Income by County
+
+```{r state-incomeyy}
+md19 %>%
+  filter(variable == "B19019_001") %>%
+  arrange(desc(estimate)) -> income19
+
+md21 %>%
+  filter(variable == "B19019_001") %>%
+  arrange(desc(estimate)) -> income21
+
+```
+
+```{r state-graph}
+md %>%
+  filter(variable == "B19019_001") %>%
+  mutate(NAME = gsub(" County, Maryland", "", NAME)) %>%
+  mutate(NAME = gsub(" city, Maryland", " City", NAME)) %>%
+  ggplot(aes(x = NAME, y = estimate, color = YEAR)) +
+  geom_point() +
+  labs(
+    x = "County",
+    y = "Median Income",
+    title = "Median Income per County",
+    caption = "Green is 2019 and Blue is 2021"
+    ) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 1, hjust=1),
+    legend.position = "top")
+```
+
+## Column
+
+### Map of Maryland
+
+```{r 2019 map}
+ggplot(income19, aes(fill = estimate, color = estimate)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "B") +
+  scale_color_viridis_c(option = "B") +
+  labs(
+    title = "2019 Maryland median income by county",
+    x = "Latitude",
+    y = "Longitude",
+    subtitle = "Data were not provided for seven counties.",
+    caption = "Maryland 2019"
+  )
+```
+
+
+
+# Analysis
+
+## Country {.tabset}
+
+### US by state - 2019
+```{r analysis-2019 graph}
+us19 %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(x = NAME, y = estimate)) +
+  geom_col() +
+  labs(
+    title = "Median Income by State",
+    x = "State",
+    y = "Median Income",
+    caption = "US 2019"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+```
+
+### US by state - 2021
+```{r analysis-2021 graph}
+us21 %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(x = NAME, y = estimate)) +
+  geom_col() +
+  labs(
+    title = "Median Income by State",
+    x = "State",
+    y = "Median Income",
+    caption = "US 2021"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+```
+
+
+## Maryland
+Note: Data were not given for seven counties: Kent, Queen Anne's, Caroline, Talbot, Dorchester, Somerst, and Worchester.
+
+### Maryland 2019
+```{r maryland-2019 map}
+md19 %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(fill = estimate, color = estimate)) +
+    geom_sf() +
+    scale_fill_viridis_c(option = "B") +
+    scale_color_viridis_c(option = "B") +
+    labs(
+      title = "Map of 2019 Maryland median income by county",
+      x = "Latitude",
+      y = "Longitude"
+      )
+```
+
+### Maryland 2021
+```{r maryland-2021 map}
+md21 %>%
+  filter(variable == "B19019_001") %>%
+  ggplot(aes(fill = estimate, color = estimate)) +
+    geom_sf() +
+    scale_fill_viridis_c(option = "B") +
+    scale_color_viridis_c(option = "B") +
+    labs(
+      title = "Map of 2021 Maryland median income by county",
+      x = "Latitude",
+      y = "Longitude"
+      )
+```
+
