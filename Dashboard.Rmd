@@ -20,22 +20,22 @@ library(shiny)
 
 # About
 
-## Column {.tabset}
+## Column
 ### Background
 
-While the census is taken every 10 years, the Census Bureau also conducts the [American Community Survey (ACS)](https://www.census.gov/programs-surveys/acs/) every year. Part of the data collected in this survey is about household income and computer ownership. This dashboard uses examines median incomes and computer usage from the ACS through use of the [tidycensus API](https://walker-data.com/tidycensus/). 
+In addition to its decennial census, the United States Census Bureau also conducts a yearly [American Community Survey (ACS)](https://www.census.gov/programs-surveys/acs/). Part of the data collected in this survey is about household income. This dashboard examines median incomes from the ACS through use of the [tidycensus API](https://walker-data.com/tidycensus/). 
 
 
 <center>
-<img src="https://walker-data.com/tidycensus/logo.png" width="20%" height="auto"><img src="https://www.census.gov/etc.clientlibs/census/clientlibs/census-pattern-library/resources/images/USCENSUS_IDENTITY_SOLO_BLACK_1.5in_R_no_padding.svg" width="20%" height="auto">
+<img src="https://walker-data.com/tidycensus/logo.png" width="10%" height="auto"><img src="https://www.census.gov/etc.clientlibs/census/clientlibs/census-pattern-library/resources/images/USCENSUS_IDENTITY_SOLO_BLACK_1.5in_R_no_padding.svg" width="10%" height="auto">
 </center>
 
+
+## Column
 
 ### Video walkthrough
 
 **Walkthrough of this dashboard**
-
-<iframe width="560" height="315" src="https://www.youtube.com/embed/e5J1W_t5NGs?si=AjBdGkXn5YGzAe6N" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
 
 
@@ -115,12 +115,10 @@ load("data/md2019.rda")
 load("data/md2021.rda")
 
 us19 %>%
-  mutate(YEAR = 2019) %>%
-  left_join(v19, by = "variable") -> us19
+  mutate(YEAR = 2019) -> us19
 
 us21 %>%
-  mutate(YEAR = 2021) %>%
-  left_join(v21, by = "variable") -> us21
+  mutate(YEAR = 2021)  -> us21
 
 md19 %>%
   mutate(YEAR = 2019) -> md19
@@ -132,71 +130,95 @@ md21 %>%
 us <- bind_rows(us19, us21, .id = "YEAR")
 md <- bind_rows(md19, md21, .id = "YEAR")
 
-us$YEAR <- map(us$YEAR, function(x) ifelse(x == 1, 2019, 2021))
-md$YEAR <- map(md$YEAR, function(x) ifelse(x == 1, 2019, 2021))
+us$YEAR <- map_dbl(as.integer(us$YEAR), function(x) ifelse(x == 1, 2019, 2021))
+md$YEAR <- map(as.integer(md$YEAR), function(x) ifelse(x == 1, 2019, 2021))
 ```
 
 ## Sidebar {.sidebar}
 
-```{r data-select state}
-selectInput(inputId = "selected_state",
-            label = "Select a state",
+```{r}
+selectInput(inputId = "state_selected",
+            label = "For the State Data tab: Select a state to be displayed.",
             choices = us %>%
               pull(NAME) %>%
               unique() %>%
               sort(),
-            selected = "Alabama"
-)
+            selected = "Maryland")
 ```
 
 ```{r data-select variable}
-selectInput(inputId = "variable_selected",
-            label = "Select a variable",
-            choices = us %>%
-              pull(variable) %>%
-              unique() %>%
-              sort(),
-            selected = "B19019_001"
-)
+
+radioButtons(inputId = "variable_selected",
+             label = "For the US Data tab: Select a variable",
+             choiceNames = list(
+               "Median Household Income",
+               "Presence of a computer total",
+               "Total Has a computer",
+               "Has a computer: With dial-up Internet subscription alone",
+               "Has a computer: With a broadband subscription",
+               "Has a computer: With a broadband subscription: With a fixed broadband Internet subscription",
+               "Has a computer: With a broadband subscription: With a fixed broadband Internet subscription: With a cellular data plan",
+               "Has a computer: With a broadband subscription: With a fixed broadband Internet subscription: Without a cellular data plan",
+               "Has a computer: With a broadband subscription: Cellular data plan alone or with dial-up",
+               "Has a computer: Without Internet subscription",
+               "No Computer"
+             ),
+             choiceValues = list("B19019_001", 
+                                 "B28008_001", 
+                                 "B28008_002", 
+                                 "B28008_003", 
+                                 "B28008_004", 
+                                 "B28008_005", 
+                                 "B28008_006", 
+                                 "B28008_007", 
+                                 "B28008_008", 
+                                 "B28008_009", 
+                                 "B28008_010")
+             )
 ```
 
-```{r data-slect year}
-radioButtons(inputId = "year_selected",
-             label = "Select a year",
-             choices = c("2019", "2021")
-)
-```
-
-```{r data-filter}
-actionButton(inputId = "selected_filters", 
-             label = "Filter")
-```
 
 ```{r data-view all}
-actionButton(inputId = "view_all",
-             label = "View all")
+# actionButton(inputId = "view_all",
+#              label = "View all")
 ```
 
 ## Data table {.tabset}
 
+### Variables
+```{r data-variables}
+DT::datatable(v19)
+```
+
 ### US Data
 ```{r US-data view table}
 
-us %>% 
-  as.tibble() %>%
-  left_join(v19, by = "variable") %>%
-  select(!c(GEOID, geometry)) %>%
-DT::datatable()
+DT::renderDataTable(
+  expr = us %>% 
+    as.tibble() %>%
+    left_join(v19, by = "variable") %>%
+    select(!c(GEOID, geometry)) %>%
+    filter(variable == input$variable_selected)
+)
+
 ```
 
 ### Maryland Data
 ```{r MD-data view table}
 
-md %>% 
-  as.tibble() %>%
-  left_join(v19, by = "variable") %>%
-  select(!c(GEOID, geometry)) %>%
-DT::datatable()
+DT::renderDT(
+  expr = us %>%
+    as.tibble() %>%
+    left_join(v19, by = "variable") %>%
+    select(!c(GEOID, geometry)) %>%
+    filter(NAME == input$state_selected)
+)
+
+
+# DT::datatable(md %>%
+#                as.tibble() %>%
+#                left_join(v19, by = "variable") %>%
+#                select(!c(GEOID, geometry)))
 ```
 
 
@@ -204,10 +226,9 @@ DT::datatable()
 # Country Wide Income
 
 
-## Row {.tabset}
------------------------------------------------------------------------
+## Column {.tabset}
 
-### 2019
+### By state in 2019
 
 ```{r country-income 2019}
 filter(us, YEAR == 2019) %>%
@@ -217,14 +238,13 @@ filter(us, YEAR == 2019) %>%
   labs(
     title = "2019 Median Income by State",
     x = "State",
-    y = "Median Income",
-    caption = "US 2019 median income"
+    y = "Median Income"
   ) +
   theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
 ```
 
 
-### 2021
+### By state in 2021
 ```{r country-income 2021}
 filter(us, YEAR == 2021) %>%
   filter(variable == "B19019_001") %>%
@@ -233,82 +253,66 @@ filter(us, YEAR == 2021) %>%
   labs(
     title = "2021 Median Income by State",
     x = "State",
-    y = "Median Income",
-    caption = "US 2021 median income"
+    y = "Median Income"
   ) +
   theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
 
 ```
 
-
-# Computer Usage in the Country
+### Distribution
 ```{r}
+
+filter(us, variable == "B19019_001") %>%
+  ggplot(aes(x = estimate, color = as.factor(YEAR))) +
+  geom_density() +
+  labs(
+    title = "Median Income by State",
+    x = "Median income"
+  )
+
 ```
-
-
 
 
 
 # Maryland Income
 
-
-## Column
------------------------------------------------------------------------
-
-### Median Income by County
-
-```{r state-incomeyy}
-md19 %>%
-  filter(variable == "B19019_001") %>%
-  arrange(desc(estimate)) -> income19
-
-md21 %>%
-  filter(variable == "B19019_001") %>%
-  arrange(desc(estimate)) -> income21
-
-```
-
-```{r state-graph}
-md %>%
-  filter(variable == "B19019_001") %>%
-  mutate(NAME = gsub(" County, Maryland", "", NAME)) %>%
-  mutate(NAME = gsub(" city, Maryland", " City", NAME)) %>%
-  ggplot(aes(x = NAME, y = estimate, color = YEAR)) +
-  geom_point() +
-  labs(
-    x = "County",
-    y = "Median Income",
-    title = "Median Income per County",
-    caption = "Green is 2019 and Blue is 2021"
-    ) +
-  theme(
-    axis.text.x = element_text(angle = 90, vjust = 1, hjust=1),
-    legend.position = "top")
-```
-
-## Column
-
-### Map of Maryland
+## Column {.sidebar}
 
 ```{r 2019 map}
-ggplot(income19, aes(fill = estimate, color = estimate)) +
-  geom_sf() +
-  scale_fill_viridis_c(option = "B") +
-  scale_color_viridis_c(option = "B") +
-  labs(
-    title = "2019 Maryland median income by county",
-    x = "Latitude",
-    y = "Longitude",
-    subtitle = "Data were not provided for seven counties.",
-    caption = "Maryland 2019"
-  )
+
+radioButtons(inputId = "MDYear",
+  label = "Choose a year to display",
+  choiceNames = list("2019", "2021"),
+  choiceValues = list("2019", "2021"),
+  selected = "2019"
+)
 ```
+
+## Column
+
+###
+```{r}
+renderPlot({
+  
+  md %>% 
+  filter(variable == "B19019_001") %>% 
+  filter(YEAR == input$MDYear) %>%
+    ggplot(aes(fill = estimate, color = estimate)) +
+    geom_sf() +
+    scale_fill_viridis_c(option = "B") +
+    scale_color_viridis_c(option = "B") +
+    labs(title = paste0(input$MDYear, " Maryland median income by county"), 
+         x = "Latitude", y = "Longitude"
+         )
+})
+```
+Note: Data were not provided for seven counties.
 
 
 
 # Analysis
 
-## Country {.tabset}
+## Column {.tabset}
 
 ### US by state - 2019
 ```{r analysis-2019 graph}
@@ -323,6 +327,7 @@ us19 %>%
     caption = "US 2019"
   ) +
   theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+
 ```
 
 ### US by state - 2021
